@@ -1,0 +1,11 @@
+langchain
+langchain-openai
+langchain-chroma
+langgraph
+chromadb
+openai
+pandas
+python-dotenv
+pydantic
+pytest
+dotenv
