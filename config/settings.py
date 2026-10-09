@@ -11,6 +11,10 @@ CHROMA_PERSIST_DIRECTORY = os.getenv(
     "CHROMA_PERSIST_DIRECTORY",
     "./chroma_db"
 )
+CHROMA_COLLECTION_NAME = os.getenv(
+    "CHROMA_COLLECTION_NAME",
+    "competitor_analysis"
+)
 
 TOP_K = int(os.getenv("TOP_K", "5"))
 MAX_AGENT_ITERATIONS = int(
