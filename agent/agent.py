@@ -6,13 +6,12 @@ from services.llm import get_llm
 from tools.competitor_tools import COMPETITOR_TOOLS
 
 
-# Base OpenAI reasoning model
 llm = get_llm()
 
-
-# Give the model access to our competitor tools
-llm_with_tools = llm.bind_tools(
-    COMPETITOR_TOOLS
+llm_with_tools = (
+    llm
+    .bind_tools(COMPETITOR_TOOLS)
+    .bind(parallel_tool_calls=False)
 )
 
 
@@ -20,18 +19,7 @@ def agent_node(
     state: AgentState,
 ) -> dict:
     """
-    Main reasoning node for the autonomous competitive
-    intelligence agent.
-
-    The model receives:
-    - system instructions
-    - user messages
-    - previous AI messages
-    - previous tool results
-
-    It then decides whether to:
-    - call another tool
-    - or return a final answer
+    Main reasoning node.
     """
 
     messages = [

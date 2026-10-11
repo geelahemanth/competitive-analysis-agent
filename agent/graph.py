@@ -1,10 +1,47 @@
-from langchain_core.messages import AIMessage, ToolMessage
+from langchain_core.messages import (
+    AIMessage,
+    ToolMessage,
+)
 from langgraph.graph import START, StateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
 
 from agent.agent import agent_node
 from agent.state import AgentState
 from tools.competitor_tools import COMPETITOR_TOOLS
+
+
+def extract_reasoning_summaries(message: AIMessage) -> list[str]:
+    """
+    Extract OpenAI reasoning summaries from an AIMessage.
+
+    With output_version='responses/v1', reasoning summaries appear
+    inside message.content.
+    """
+    summaries = []
+
+    if not isinstance(message.content, list):
+        return summaries
+
+    for block in message.content:
+        if not isinstance(block, dict):
+            continue
+
+        if block.get("type") != "reasoning":
+            continue
+
+        reasoning_summaries = block.get("summary", [])
+        if not isinstance(reasoning_summaries, list):
+            continue
+
+        for summary in reasoning_summaries:
+            if not isinstance(summary, dict):
+                continue
+
+            text = summary.get("text")
+            if isinstance(text, str) and text.strip():
+                summaries.append(text)
+
+    return summaries
 
 
 graph_builder = StateGraph(AgentState)
@@ -17,19 +54,17 @@ graph_builder.add_edge("tools", "agent")
 competitive_agent_graph = graph_builder.compile()
 
 
-def run_with_trace(query: str) -> None:
+def run_with_trace(
+    query: str,
+) -> None:
     """
-    Run the autonomous agent while printing its observable
-    execution trajectory.
-
-    Shows:
-    - tool selected by the agent
+    Run the autonomous agent and display:
+    - reasoning summaries
+    - agent tool decisions
     - tool arguments
-    - tool results
-    - when the agent stops using tools
-    - final response
+    - tool observations
+    - final answer
     """
-
     inputs = {
         "messages": [
             {
@@ -38,14 +73,14 @@ def run_with_trace(query: str) -> None:
             }
         ]
     }
-
     final_response = None
 
     print("\n===================================")
     print("AUTONOMOUS AGENT EXECUTION")
     print("===================================")
 
-    print(f"\n[USER]\n{query}")
+    print("\n[USER]")
+    print(query)
 
     for update in competitive_agent_graph.stream(
         inputs,
@@ -55,11 +90,10 @@ def run_with_trace(query: str) -> None:
         stream_mode="updates",
     ):
 
-        # -------------------------
+        # =================================
         # AGENT NODE
-        # -------------------------
+        # =================================
         if "agent" in update:
-
             messages = update["agent"].get(
                 "messages",
                 [],
@@ -70,98 +104,62 @@ def run_with_trace(query: str) -> None:
 
             message = messages[-1]
 
-            if isinstance(message, AIMessage):
+            if not isinstance(
+                message,
+                AIMessage,
+            ):
+                continue
 
-                # Agent decided to call one or more tools
-                if message.tool_calls:
+            # -----------------------------
+            # REASONING SUMMARIES
+            # -----------------------------
+            reasoning_summaries = extract_reasoning_summaries(message)
+            if reasoning_summaries:
+                print("\n[REASONING SUMMARY]")
+                for summary in reasoning_summaries:
+                    print(summary)
 
-                    for tool_call in message.tool_calls:
+            # -----------------------------
+            # TOOL DECISIONS OR FINAL ANSWER
+            # -----------------------------
+            if message.tool_calls:
+                for tool_call in message.tool_calls:
+                    tool_name = tool_call.get("name", "unknown_tool")
+                    tool_args = tool_call.get("args", {})
 
-                        tool_name = tool_call.get(
-                            "name",
-                            "unknown_tool",
-                        )
+                    print("\n[AGENT ACTION]")
+                    print(f"Tool: {tool_name}")
+                    print(f"Arguments: {tool_args}")
 
-                        tool_args = tool_call.get(
-                            "args",
-                            {},
-                        )
+            elif message.text:
+                print("\n[AGENT STATUS]")
+                print("No further tool call requested.")
+                print("Preparing final answer...")
+                final_response = message.text
 
-                        print(
-                            "\n[AGENT ACTION]"
-                        )
-
-                        print(
-                            f"Tool: {tool_name}"
-                        )
-
-                        print(
-                            f"Arguments: {tool_args}"
-                        )
-
-                # No tool call = agent has decided to answer
-                elif message.content:
-
-                    print(
-                        "\n[AGENT STATUS]"
-                    )
-
-                    print(
-                        "No further tool call requested."
-                    )
-
-                    print(
-                        "Preparing final answer..."
-                    )
-
-                    final_response = message.text
-
-        # -------------------------
+        # =================================
         # TOOL NODE
-        # -------------------------
+        # =================================
         if "tools" in update:
-
             messages = update["tools"].get(
                 "messages",
                 [],
             )
 
             for message in messages:
-
-                if not isinstance(
-                    message,
-                    ToolMessage,
-                ):
+                if not isinstance(message, ToolMessage):
                     continue
 
-                tool_name = getattr(
-                    message,
-                    "name",
-                    None,
-                )
-
-                print(
-                    "\n[TOOL RESULT]"
-                )
-
+                tool_name = getattr(message, "name", None)
+                print("\n[TOOL RESULT]")
                 if tool_name:
-                    print(
-                        f"Tool: {tool_name}"
-                    )
+                    print(f"Tool: {tool_name}")
 
-                content = str(
-                    message.content
-                )
-
+                content = str(message.content)
                 # Keep terminal output readable
                 max_length = 1000
-
                 if len(content) > max_length:
-                    content = (
-                        content[:max_length]
-                        + "\n...[truncated]"
-                    )
-
+                    content = content[:max_length] + "\n...[truncated]"
                 print(content)
 
     print("\n===================================")
@@ -172,11 +170,25 @@ def run_with_trace(query: str) -> None:
 
 
 if __name__ == "__main__":
-
     run_with_trace(
-        (
-            "Compare NovaTech and Apex Digital. "
-            "Which company has the stronger "
-            "positioning and why?"
-        )
+        """Analyze NovaTech's competitive position.
+
+From the available competitors, determine which
+company poses the greatest strategic threat to
+NovaTech over the next three years.
+
+Consider:
+- customer overlap
+- pricing overlap
+- geographic overlap
+- growth
+- brand differentiation
+- ability to enter NovaTech's student segment
+
+Do not simply choose the largest company.
+
+Gather whatever competitor information you need,
+compare the strongest candidates, explain conflicting
+evidence, and identify what additional data would be
+needed for a high-confidence decision."""
     )
